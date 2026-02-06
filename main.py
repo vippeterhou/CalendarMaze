@@ -39,7 +39,7 @@ def visualize_piece(piece, symbol='#'):
     for row in vis_grid:
         print(' '.join(row))
 
-def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, filename="solution.txt"):
+def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, filename="solution.txt", state=None):
     print("Solution found!")
     print(f"Exposed points: {sorted(exposed_points)}")
     rows, cols = grid_size
@@ -81,6 +81,17 @@ def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSE
         if iter_nodes is not None and elapsed_time is not None:
             f.write(f"\nFinal nodes iterated: {iter_nodes}\n")
             f.write(f"Elapsed time: {elapsed_time:.2f} seconds\n")
+        if state is not None:
+            total = state.get('total', 0)
+            calls = state.get('calls', 0)
+            start = state.get('start', time.time())
+            elapsed = time.time() - start
+            percent = 100.0 * calls / total if total > 0 else 0
+            bar_length = 40
+            filled_length = int(bar_length * percent // 100)
+            bar = '=' * filled_length + '-' * (bar_length - filled_length)
+            progress_str = f"[{bar}] {percent:.4f}% | {calls} nodes | elapsed: {elapsed:.1f}s"
+            f.write(f"Final progress: {progress_str}\n")
     print(f"Solution saved to {new_filename}")
     print("\nSolution visualization:")
     for row in grid_vis:
@@ -103,7 +114,13 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
             count = max(0, (rows - (max_r - min_r))) * max(0, (cols - (max_c - min_c)))
             piece_max += count
         total_iterations *= piece_max if piece_max > 0 else 1
-    state = {'calls': 0, 'start': time.time(), 'last_print': time.time(), 'total': total_iterations}
+    state = {
+        'calls': 0,
+        'start': time.time(),
+        'last_print': time.time(),
+        'total': total_iterations,
+        'progress_width': 0,
+    }
 
     def can_place(covered, orientation, base_r, base_c):
         positions = []
@@ -119,7 +136,6 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
         return positions
 
     import sys
-    progress_file = "solution.txt"
     def print_progress(piece_idx, placements, covered):
         elapsed = time.time() - state['start']
         percent = 100.0 * state['calls'] / state['total'] if state['total'] > 0 else 0
@@ -127,11 +143,10 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
         filled_length = int(bar_length * percent // 100)
         bar = '=' * filled_length + '-' * (bar_length - filled_length)
         progress_str = f"[{bar}] {percent:.4f}% | {state['calls']} nodes | elapsed: {elapsed:.1f}s"
-        sys.stdout.write(f"\r{progress_str}")
+        state['progress_width'] = max(state['progress_width'], len(progress_str))
+        padded_progress = progress_str.ljust(state['progress_width'])
+        sys.stdout.write(f"\r\033[K{padded_progress}")
         sys.stdout.flush()
-        # Save progress bar to file
-        with open(progress_file, "a") as f:
-            f.write(progress_str + "\n")
 
     def backtrack(piece_idx, covered, placements):
         state['calls'] += 1
@@ -160,7 +175,7 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
         return None
 
     solution = backtrack(0, set(), [])
-    return solution
+    return solution, state
 
 
 # --- Lego Pieces ---
@@ -213,9 +228,9 @@ def main():
     print(f"\nTotal estimated nodes: {total_iterations}")
 
     print("\nSolving the tiling puzzle...")
-    solution = solve_tiling()
+    solution, state = solve_tiling()
     if solution:
-        print_and_save_solution(solution)
+        print_and_save_solution(solution, state=state)
     else:
         print("No solution found.")
 
