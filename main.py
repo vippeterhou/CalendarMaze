@@ -1,3 +1,4 @@
+import os
 import time
 
 # EXPOSED_POINTS = {(0,1), (1,2), (3,9)} # Feb 6 Fri
@@ -53,7 +54,6 @@ def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSE
                 grid_vis[r][c] = symbol
     for (r, c) in exposed_points:
         grid_vis[r][c] = 'X'
-    import os
     base, ext = os.path.splitext(filename)
     new_filename = filename
     counter = 1
@@ -89,14 +89,11 @@ def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSE
         print(' '.join(row))
 
 # --- Solver ---
-def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True):
+def estimate_total_iterations(grid_size, piece_orientations):
     rows, cols = grid_size
-    all_cells = {(r, c) for r in range(rows) for c in range(cols)}
-    to_cover = all_cells - exposed_points
-    all_piece_orientations = [all_orientations(piece) for piece in lego_pieces]
     piece_max_list = []
     total_iterations = 1
-    for orientations in all_piece_orientations:
+    for orientations in piece_orientations:
         piece_max = 0
         for orient in orientations:
             min_r = min(x for x, y in orient)
@@ -111,6 +108,15 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
     suffix_products = [1] * (len(piece_max_list) + 1)
     for i in range(len(piece_max_list) - 1, -1, -1):
         suffix_products[i] = suffix_products[i + 1] * piece_max_list[i]
+    return total_iterations, suffix_products
+
+
+def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True):
+    rows, cols = grid_size
+    all_cells = {(r, c) for r in range(rows) for c in range(cols)}
+    to_cover = all_cells - exposed_points
+    all_piece_orientations = [all_orientations(piece) for piece in lego_pieces]
+    total_iterations, suffix_products = estimate_total_iterations(grid_size, all_piece_orientations)
     state = {
         'calls': 0,
         'done': 0,
@@ -134,7 +140,7 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
         return positions
 
     import sys
-    def print_progress(piece_idx, placements, covered):
+    def print_progress():
         elapsed = time.time() - state['start']
         percent = 100.0 * state['done'] / state['total'] if state['total'] > 0 else 0
         bar_length = 40
@@ -152,11 +158,11 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
         if debug and state['calls'] % 1000 == 0:
             now = time.time()
             if now - state['last_print'] > 1:
-                print_progress(piece_idx, placements, covered)
+                print_progress()
                 state['last_print'] = now
         if piece_idx == len(lego_pieces):
             if covered == to_cover:
-                print_progress(piece_idx, placements, covered)
+                print_progress()
                 return placements
             return None
         subtree_size = suffix_products[piece_idx + 1]
@@ -217,17 +223,7 @@ def main():
 
     # Calculate and print total estimated nodes
     all_piece_orientations = [all_orientations(piece) for piece in lego_pieces]
-    total_iterations = 1
-    for orientations in all_piece_orientations:
-        piece_max = 0
-        for orient in orientations:
-            min_r = min(x for x, y in orient)
-            min_c = min(y for x, y in orient)
-            max_r = max(x for x, y in orient)
-            max_c = max(y for x, y in orient)
-            count = max(0, (rows - (max_r - min_r))) * max(0, (cols - (max_c - min_c)))
-            piece_max += count
-        total_iterations *= piece_max if piece_max > 0 else 1
+    total_iterations, _ = estimate_total_iterations(GRID_SIZE, all_piece_orientations)
     print(f"\nTotal estimated nodes: {total_iterations} ({total_iterations:.4e})")
 
     print("\nSolving the tiling puzzle...")
