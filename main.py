@@ -41,7 +41,7 @@ def visualize_piece(piece, symbol='#'):
         print(' '.join(row))
 
 def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, filename="solution.txt", state=None):
-    print("Solution found!")
+    print("\nSolution found!")
     print(f"Exposed points: {sorted(exposed_points)}")
     rows, cols = grid_size
     grid_vis = [['.' for _ in range(cols)] for _ in range(rows)]
@@ -61,16 +61,6 @@ def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSE
         new_filename = f"{base}_{counter}{ext}"
         counter += 1
     # Get stats from solve_tiling state
-    from inspect import currentframe
-    frame = currentframe()
-    iter_nodes = None
-    elapsed_time = None
-    if frame is not None:
-        outer = frame.f_back
-        if outer is not None and 'state' in outer.f_locals:
-            state = outer.f_locals['state']
-            iter_nodes = state.get('calls')
-            elapsed_time = time.time() - state.get('start', time.time())
     with open(new_filename, "w") as f:
         points = sorted(exposed_points)
         header = "visualization of the solution to "
@@ -79,20 +69,20 @@ def print_and_save_solution(solution, grid_size=GRID_SIZE, exposed_points=EXPOSE
         for row in grid_vis:
             f.write(' '.join(row) + '\n')
         # Save stats
-        if iter_nodes is not None and elapsed_time is not None:
-            f.write(f"\nFinal nodes iterated: {iter_nodes}\n")
-            f.write(f"Elapsed time: {elapsed_time:.2f} seconds\n")
         if state is not None:
             total = state.get('total', 0)
-            calls = state.get('calls', 0)
+            done = state.get('done', 0)
             start = state.get('start', time.time())
             elapsed = time.time() - start
-            percent = 100.0 * calls / total if total > 0 else 0
+            percent = 100.0 * done / total if total > 0 else 0
             bar_length = 40
             filled_length = int(bar_length * percent // 100)
             bar = '=' * filled_length + '-' * (bar_length - filled_length)
-            progress_str = f"[{bar}] {percent:.4f}% | {calls} nodes | elapsed: {elapsed:.1f}s"
+            done_sci = f"{done:.4e}"
+            progress_str = f"[{bar}] {percent:.4f}% | {done_sci} combos | elapsed: {elapsed:.1f}s"
             f.write(f"Final progress: {progress_str}\n")
+            f.write(f"Final combos: {done} ({done:.4e})\n")
+            f.write(f"Total estimated nodes: {total} ({total:.4e})\n")
     print(f"Solution saved to {new_filename}")
     print("\nSolution visualization:")
     for row in grid_vis:
@@ -104,6 +94,7 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
     all_cells = {(r, c) for r in range(rows) for c in range(cols)}
     to_cover = all_cells - exposed_points
     all_piece_orientations = [all_orientations(piece) for piece in lego_pieces]
+    piece_max_list = []
     total_iterations = 1
     for orientations in all_piece_orientations:
         piece_max = 0
@@ -114,9 +105,15 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
             max_c = max(y for x, y in orient)
             count = max(0, (rows - (max_r - min_r))) * max(0, (cols - (max_c - min_c)))
             piece_max += count
-        total_iterations *= piece_max if piece_max > 0 else 1
+        piece_max = piece_max if piece_max > 0 else 1
+        piece_max_list.append(piece_max)
+        total_iterations *= piece_max
+    suffix_products = [1] * (len(piece_max_list) + 1)
+    for i in range(len(piece_max_list) - 1, -1, -1):
+        suffix_products[i] = suffix_products[i + 1] * piece_max_list[i]
     state = {
         'calls': 0,
+        'done': 0,
         'start': time.time(),
         'last_print': time.time(),
         'total': total_iterations,
@@ -139,11 +136,12 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
     import sys
     def print_progress(piece_idx, placements, covered):
         elapsed = time.time() - state['start']
-        percent = 100.0 * state['calls'] / state['total'] if state['total'] > 0 else 0
+        percent = 100.0 * state['done'] / state['total'] if state['total'] > 0 else 0
         bar_length = 40
         filled_length = int(bar_length * percent // 100)
         bar = '=' * filled_length + '-' * (bar_length - filled_length)
-        progress_str = f"[{bar}] {percent:.4f}% | {state['calls']} nodes | elapsed: {elapsed:.1f}s"
+        done_sci = f"{state['done']:.4e}"
+        progress_str = f"[{bar}] {percent:.4f}% | {done_sci} combos | elapsed: {elapsed:.1f}s"
         state['progress_width'] = max(state['progress_width'], len(progress_str))
         padded_progress = progress_str.ljust(state['progress_width'])
         sys.stdout.write(f"\r\033[K{padded_progress}")
@@ -161,6 +159,7 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
                 print_progress(piece_idx, placements, covered)
                 return placements
             return None
+        subtree_size = suffix_products[piece_idx + 1]
         for orientation in all_piece_orientations[piece_idx]:
             min_r = min(x for x, y in orientation)
             min_c = min(y for x, y in orientation)
@@ -169,10 +168,13 @@ def solve_tiling(grid_size=GRID_SIZE, exposed_points=EXPOSED_POINTS, debug=True)
             for base_r in range(rows - (max_r - min_r)):
                 for base_c in range(cols - (max_c - min_c)):
                     pos = can_place(covered, orientation, base_r, base_c)
-                    if pos is not None:
-                        result = backtrack(piece_idx + 1, covered | set(pos), placements + [(piece_idx, orientation, (base_r, base_c))])
-                        if result is not None:
-                            return result
+                    if pos is None:
+                        state['done'] += subtree_size
+                        continue
+                    result = backtrack(piece_idx + 1, covered | set(pos), placements + [(piece_idx, orientation, (base_r, base_c))])
+                    if result is not None:
+                        return result
+                    state['done'] += subtree_size
         return None
 
     solution = backtrack(0, set(), [])
@@ -226,7 +228,7 @@ def main():
             count = max(0, (rows - (max_r - min_r))) * max(0, (cols - (max_c - min_c)))
             piece_max += count
         total_iterations *= piece_max if piece_max > 0 else 1
-    print(f"\nTotal estimated nodes: {total_iterations}")
+    print(f"\nTotal estimated nodes: {total_iterations} ({total_iterations:.4e})")
 
     print("\nSolving the tiling puzzle...")
     solution, state = solve_tiling()
