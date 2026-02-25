@@ -2,7 +2,10 @@ import os
 import time
 
 # EXPOSED_POINTS = {(0,1), (1,2), (3,9)} # Feb 6 Fri
-EXPOSED_POINTS = {(0,1), (1,3), (4,8)} # Feb 7 Sat
+# EXPOSED_POINTS = {(0,1), (1,3), (4,8)} # Feb 7 Sat
+EXPOSED_POINTS = {(0,1), (1,5), (0,8)} # Feb 9 Mon
+# EXPOSED_POINTS = {(0,0), (0,1), (0,2)} 
+# EXPOSED_POINTS = {(0,0), (1,0), (2,0)} 
 GRID_SIZE = (5, 10)
 
 # --- Piece Utilities ---
